@@ -123,7 +123,7 @@ async fn store_bundle_authenticates_configured_and_redis_acl_credentials() {
         .await
         .unwrap();
     let username = format!("cpr_password_{}", uuid::Uuid::new_v4().simple());
-    let password = "Managed@:/?#%&+$'\"\\ secret9!";
+    let password = "Managed%41%25%FF@:/?#%&+$'\"\\ secret9!";
     redis::cmd("ACL")
         .arg("SETUSER")
         .arg(&username)
@@ -172,6 +172,61 @@ async fn store_bundle_authenticates_configured_and_redis_acl_credentials() {
                 .all(|state| *state == gateway_core::health::HealthState::Healthy)
         );
     }
+}
+
+#[tokio::test]
+async fn store_bundle_authenticates_postgres_password_with_percent_sequences() {
+    let (Some(database), Some(redis_url)) = (
+        crate::support::test_env("CPR_TEST_DATABASE_URL"),
+        crate::support::test_env("CPR_TEST_REDIS_URL"),
+    ) else {
+        return;
+    };
+    let admin = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&database)
+        .await
+        .unwrap();
+    let username = format!("cpr_password_{}", uuid::Uuid::new_v4().simple());
+    let password = "Managed%41%25%FFPassword9!";
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "CREATE ROLE {username} LOGIN PASSWORD '{password}'"
+    )))
+    .execute(&admin)
+    .await
+    .unwrap();
+    let mut database_url = url::Url::parse(&database).unwrap();
+    database_url.set_username(&username).unwrap();
+    database_url.set_password(None).unwrap();
+    let mut config: StoreConfig = serde_json::from_value(json!({
+        "database": {"url": database_url.as_str(), "password": password},
+        "redis": config_connection(url::Url::parse(&redis_url).unwrap()),
+    }))
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let result = async {
+        config.resolve_and_validate(directory.path())?;
+        let bundle = gateway_store::initialize_read_only(config).await?;
+        let mut states = Vec::new();
+        for probe in bundle.health_probes() {
+            states.push(probe.check().await);
+        }
+        Ok::<_, gateway_store::StoreError>(states)
+    }
+    .await;
+    // 连接失败时也先清理临时角色，避免回归断言留下测试账号
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP ROLE {username}")))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
+    let states = result.expect("PostgreSQL password percent sequences remain literal");
+    assert!(!states.is_empty());
+    assert!(
+        states
+            .iter()
+            .all(|state| *state == gateway_core::health::HealthState::Healthy)
+    );
 }
 
 fn config_connection(mut url: url::Url) -> serde_json::Value {

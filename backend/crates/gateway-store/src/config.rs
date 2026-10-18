@@ -213,7 +213,8 @@ impl StoreConnectionConfig {
                 message: format!("{field}.url must not contain a password"),
             });
         }
-        url.set_password(Some(&self.password))
+        // set_password 保留已有百分号序列，先转义字面量 %，避免驱动解码后改变原始密码
+        url.set_password(Some(&self.password.replace('%', "%25")))
             .map_err(|()| StoreError::InvalidData {
                 source: None,
                 entity: "store config",
