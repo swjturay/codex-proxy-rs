@@ -184,25 +184,17 @@ pub(crate) struct StoreConnectionConfig {
 impl StoreConnectionConfig {
     fn validate(&self, field: &'static str) -> StoreResult<()> {
         require_nonempty("store config", field, &self.url)?;
-        // 托管 PostgreSQL 的密码策略由服务端约束，客户端保留长度与控制字符边界
-        // Redis 继续使用现有的固定十六进制密码合同
-        let password_valid = if field == "database" {
-            (16..=128).contains(&self.password.len())
-                && !self.password.chars().any(char::is_control)
-                && !self.password.trim().is_empty()
-        } else {
-            self.password.len() == 48 && self.password.bytes().all(|byte| byte.is_ascii_hexdigit())
-        };
-        if !password_valid {
+        // 托管存储的具体密码策略由服务端约束，客户端共用长度与控制字符边界
+        if !(16..=128).contains(&self.password.len())
+            || self.password.chars().any(char::is_control)
+            || self.password.trim().is_empty()
+        {
             return Err(StoreError::InvalidData {
                 source: None,
                 entity: "store config",
-                message: if field == "database" {
-                    "database.password must be 16 to 128 bytes, not blank, without control characters"
-                        .to_owned()
-                } else {
-                    format!("{field}.password must be exactly 48 hexadecimal characters")
-                },
+                message: format!(
+                    "{field}.password must be 16 to 128 bytes, not blank, without control characters"
+                ),
             });
         }
         self.connection_url(field).map(|_| ())

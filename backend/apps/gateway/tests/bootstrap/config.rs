@@ -110,7 +110,7 @@ fn config_loader_should_apply_only_explicit_topology_overrides() {
             "CPR_DATABASE_PASSWORD",
             "RdsTest9!abcdefGhRdsTest9!abcdefGh",
         )
-        .env("CPR_REDIS_PASSWORD", REDIS_PASSWORD)
+        .env("CPR_REDIS_PASSWORD", "ManagedRedis9!abcdefGh")
         .status()
         .expect("run isolated environment override test");
     assert!(status.success());
@@ -285,7 +285,7 @@ fn config_loader_should_reject_embedded_database_password() {
 }
 
 #[test]
-fn config_loader_should_accept_managed_postgres_passwords() {
+fn config_loader_should_accept_managed_store_passwords() {
     for password in [
         "RdsTest9!abcdefGh".to_owned(),
         "RdsTest9!abcdefGhRdsTest9!abcdefGh".to_owned(),
@@ -294,16 +294,18 @@ fn config_loader_should_accept_managed_postgres_passwords() {
         "Managed@:/?#%&+Password9!".to_owned(),
         "数据库密码".repeat(4),
     ] {
-        let mut document = valid_config_document();
-        document["store"]["database"]["password"] = serde_json::json!(password);
-        let (config, _directory) =
-            parse_config(&document.to_string()).expect("managed PostgreSQL password");
-        assert!(!format!("{config:?}").contains(&password));
+        for field in ["database", "redis"] {
+            let mut document = valid_config_document();
+            document["store"][field]["password"] = serde_json::json!(password);
+            let (config, _directory) =
+                parse_config(&document.to_string()).expect("managed store password");
+            assert!(!format!("{config:?}").contains(&password));
+        }
     }
 }
 
 #[test]
-fn config_loader_should_reject_invalid_postgres_passwords() {
+fn config_loader_should_reject_invalid_store_passwords() {
     for password in [
         String::new(),
         "x".repeat(15),
@@ -316,20 +318,20 @@ fn config_loader_should_reject_invalid_postgres_passwords() {
         "RdsTest9!abcdefGh\t".to_owned(),
         "RdsTest9!abcdefGh\u{007f}".to_owned(),
     ] {
-        let mut document = valid_config_document();
-        document["store"]["database"]["password"] = serde_json::json!(password);
-        assert_rejected(document.to_string());
+        for field in ["database", "redis"] {
+            let mut document = valid_config_document();
+            document["store"][field]["password"] = serde_json::json!(password);
+            assert_rejected(document.to_string());
+        }
     }
 }
 
 #[test]
-fn config_loader_should_reject_non_hex_redis_password() {
-    assert_rejected(valid_config().replace(REDIS_PASSWORD, &"g".repeat(48)));
-}
-
-#[test]
-fn config_loader_should_reject_wrong_length_redis_password() {
-    assert_rejected(valid_config().replace(REDIS_PASSWORD, "1234"));
+fn config_loader_should_reject_embedded_redis_password() {
+    assert_rejected(valid_config().replace(
+        "redis://127.0.0.1:6379/",
+        "redis://default:embedded@127.0.0.1:6379/",
+    ));
 }
 
 #[test]
