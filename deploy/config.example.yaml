@@ -44,6 +44,7 @@ store:
   database:
     # Docker 内由 CPR_DATABASE_URL 覆盖；密码不要写进 URL。
     url: 'postgres://codex_proxy@127.0.0.1:5432/codex_proxy'
+    # 16–128 字节，不能全为空白或含控制字符，并满足数据库服务端密码策略
     password: &postgres_password ''
   redis:
     # Docker 内由 CPR_REDIS_URL 覆盖；密码不要写进 URL。
